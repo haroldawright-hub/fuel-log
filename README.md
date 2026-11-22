@@ -8,7 +8,7 @@ A free, private nutrition tracker that runs in your phone's browser and installs
 - **Search**: about 115 common foods with USDA values (works offline), your saved and recent foods, and packaged products from Open Food Facts.
 - **Log**: shows calories and macros per meal. A calendar colors each day by how close you were to your target.
 - **Goals**: a Mifflin–St Jeor calculator, or set your own numbers.
-- **Backup and restore**: saves your log to a file (iCloud Drive or Files) and merges it back in.
+- **Backup and restore**: saves your log to a file through the share sheet (Google Drive, iCloud Drive or Files) and merges it back in. On Android the file is a `.txt`, because Chrome won't share `.json` files.
 
 ## Where data lives
 Everything is stored in the browser on your phone (`localStorage`). Only barcode numbers and search words are sent to Open Food Facts. Make a backup from **Goals → Your data** every couple of weeks.

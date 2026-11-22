@@ -60,9 +60,12 @@ function saveSettings(next) { S.settings = next; persist(); }
 async function exportData() {
   const json = JSON.stringify({ app: "fuel-log", v: 1, exported: new Date().toISOString(), days: S.days, foods: S.foods, settings: S.settings });
   const name = `fuel-log-backup-${todayKey()}.json`;
-  const file = new File([json], name, { type: "application/json" });
+  let file = new File([json], name, { type: "application/json" });
   const done = () => { saveSettings({ ...settings(), lastBackup: Date.now() }); render(); toast("Backup saved"); };
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+  // Chrome on Android won't share .json files, but will share .txt, which opens the share sheet (Drive, etc.).
+  const canShare = f => navigator.canShare && navigator.canShare({ files: [f] });
+  if (!canShare(file)) { const txt = new File([json], name.replace(/\.json$/, ".txt"), { type: "text/plain" }); if (canShare(txt)) file = txt; }
+  if (canShare(file)) {
     try { await navigator.share({ files: [file], title: "Fuel Log backup" }); done(); return; }
     catch (e) { if (e && e.name === "AbortError") return; }
   }
