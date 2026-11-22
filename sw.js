@@ -2,8 +2,8 @@
    Pages: network first (so updates show up), falling back to the cached copy.
    App files: network first too. Libraries: served from cache, refreshed in the background.
    Open Food Facts lookups: always live, never cached here. */
-const CACHE = "fuel-log-v4";
-const SHELL = ["./", "./index.html", "./app.js?v=4", "./foods.js?v=4", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
+const CACHE = "fuel-log-v5";
+const SHELL = ["./", "./index.html", "./app.js?v=5", "./foods.js?v=5", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

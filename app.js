@@ -1,7 +1,7 @@
 /* Fuel Log app logic */
 (() => {
 "use strict";
-const VERSION = "4";
+const VERSION = "5";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const num = v => { const x = parseFloat(String(v ?? "").replace(/[^0-9.\-]/g, "")); return isFinite(x) ? x : 0; };
@@ -64,14 +64,21 @@ async function exportData() {
   let file = new File([json], name, { type: "application/json" });
   const done = () => { saveSettings({ ...settings(), lastBackup: Date.now() }); render(); toast("Backup saved"); };
   // Chrome on Android won't share .json files, but will share .txt, which opens the share sheet (Drive, etc.).
-  const canShare = f => navigator.canShare && navigator.canShare({ files: [f] });
-  if (!canShare(file)) { const txt = new File([json], name.replace(/\.json$/, ".txt"), { type: "text/plain" }); if (canShare(txt)) file = txt; }
+  const canShare = f => { try { return !!(navigator.canShare && navigator.canShare({ files: [f] })); } catch { return false; } };
+  const diag = { share: typeof navigator.share === "function", canShare: typeof navigator.canShare === "function", json: canShare(file), txt: false, err: "" };
+  if (!diag.json) { const txt = new File([json], name.replace(/\.json$/, ".txt"), { type: "text/plain" }); diag.txt = canShare(txt); if (diag.txt) file = txt; }
   if (canShare(file)) {
     try { await navigator.share({ files: [file], title: "Fuel Log backup" }); done(); return; }
-    catch (e) { if (e && e.name === "AbortError") return; }
+    catch (e) { if (e && e.name === "AbortError") return; diag.err = (e && (e.name + ": " + e.message)) || "unknown"; }
   }
-  const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name; document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000); done();
+  const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = file.name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  saveSettings({ ...settings(), lastBackup: Date.now() }); render();
+  const yn = b => b ? "yes" : "no";
+  openSheet(`<div class="sheet-head"><div><div class="eyebrow">Backup</div><h2>Saved to Downloads</h2></div><button class="icon-btn" data-close aria-label="Close">×</button></div>
+    <p class="muted">This browser didn't open the share sheet, so the file was downloaded instead. To put it in Google Drive, open the Files app, long-press the backup file, and choose Share → Drive.</p>
+    <p class="note">Details: share ${yn(diag.share)} · canShare ${yn(diag.canShare)} · json ${yn(diag.json)} · txt ${yn(diag.txt)}${diag.err ? " · " + esc(diag.err) : ""} · v${VERSION}</p>
+    <div class="btnrow"><button class="btn primary" data-close>OK</button></div>`);
 }
 let pendingImport = null;
 $("#jsonIn").addEventListener("change", async e => {
