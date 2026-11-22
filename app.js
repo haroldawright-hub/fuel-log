@@ -1,6 +1,7 @@
 /* Fuel Log app logic */
 (() => {
 "use strict";
+const VERSION = "4";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const num = v => { const x = parseFloat(String(v ?? "").replace(/[^0-9.\-]/g, "")); return isFinite(x) ? x : 0; };
@@ -576,6 +577,7 @@ function renderGoals() {
     <p class="muted" style="margin:0;font-size:13.5px">${days} logged ${days === 1 ? "day" : "days"} and ${foods} saved ${foods === 1 ? "food" : "foods"}. Nothing is sent anywhere except barcode and search lookups to Open Food Facts. Last backup: ${st.lastBackup ? esc(new Date(st.lastBackup).toLocaleDateString()) : "never"}.</p>
     <div class="btnrow"><button class="btn" data-act="backup">Back up</button><button class="btn" data-act="restore">Restore</button></div>
     ${foods ? `<button class="link-btn" style="margin-top:8px" data-act="manage-foods">Manage saved foods</button>` : ""}
+    <p class="note" style="text-align:center">Fuel Log version ${VERSION}</p>
     ${standalone ? "" : `<p class="note">To use it like an app: in Safari tap Share, then Add to Home Screen. In Chrome, open the ⋮ menu and choose Add to Home screen. Data saved in a home-screen app is also safer from being cleared by the browser.</p>`}
   </section>`;
 }
