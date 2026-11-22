@@ -1,7 +1,7 @@
 /* Fuel Log app logic */
 (() => {
 "use strict";
-const VERSION = "5";
+const VERSION = "6";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const num = v => { const x = parseFloat(String(v ?? "").replace(/[^0-9.\-]/g, "")); return isFinite(x) ? x : 0; };
@@ -66,7 +66,8 @@ async function exportData() {
   // Chrome on Android won't share .json files, but will share .txt, which opens the share sheet (Drive, etc.).
   const canShare = f => { try { return !!(navigator.canShare && navigator.canShare({ files: [f] })); } catch { return false; } };
   const diag = { share: typeof navigator.share === "function", canShare: typeof navigator.canShare === "function", json: canShare(file), txt: false, err: "" };
-  if (!diag.json) { const txt = new File([json], name.replace(/\.json$/, ".txt"), { type: "text/plain" }); diag.txt = canShare(txt); if (diag.txt) file = txt; }
+  // Android Chrome's canShare says yes to .json but share() then rejects it ("Permission denied"), so use .txt there.
+  if (!diag.json || /Android/i.test(navigator.userAgent)) { const txt = new File([json], name.replace(/\.json$/, ".txt"), { type: "text/plain" }); diag.txt = canShare(txt); if (diag.txt) file = txt; }
   if (canShare(file)) {
     try { await navigator.share({ files: [file], title: "Fuel Log backup" }); done(); return; }
     catch (e) { if (e && e.name === "AbortError") return; diag.err = (e && (e.name + ": " + e.message)) || "unknown"; }
