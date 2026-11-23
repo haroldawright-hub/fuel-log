@@ -2,8 +2,8 @@
    Pages: network first (so updates show up), falling back to the cached copy.
    App files: network first too. Libraries: served from cache, refreshed in the background.
    Open Food Facts lookups: always live, never cached here. */
-const CACHE = "fuel-log-v6";
-const SHELL = ["./", "./index.html", "./app.js?v=6", "./foods.js?v=6", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
+const CACHE = "fuel-log-v7";
+const SHELL = ["./", "./index.html", "./app.js?v=7", "./style.css?v=7", "./data/usda.json?v=1", "./data/products.json?v=1", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -24,6 +24,12 @@ self.addEventListener("fetch", e => {
       fetch(req).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put("./index.html", copy)); return res; })
         .catch(() => caches.match("./index.html"))
     );
+    return;
+  }
+
+  // Food database files are versioned in their URL, so serve them straight from the cache.
+  if (url.origin === self.location.origin && url.pathname.includes("/data/")) {
+    e.respondWith(caches.open(CACHE).then(async c => (await c.match(req)) || fetch(req).then(res => { if (res.ok) c.put(req, res.clone()); return res; })));
     return;
   }
 

@@ -1,7 +1,7 @@
 /* Fuel Log app logic */
 (() => {
 "use strict";
-const VERSION = "6";
+const VERSION = "7";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const num = v => { const x = parseFloat(String(v ?? "").replace(/[^0-9.\-]/g, "")); return isFinite(x) ? x : 0; };
@@ -76,7 +76,7 @@ async function exportData() {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   saveSettings({ ...settings(), lastBackup: Date.now() }); render();
   const yn = b => b ? "yes" : "no";
-  openSheet(`<div class="sheet-head"><div><div class="eyebrow">Backup</div><h2>Saved to Downloads</h2></div><button class="icon-btn" data-close aria-label="Close">×</button></div>
+  openSheet(`<div class="sheet-head"><div><div class="label">Backup</div><h2>Saved to Downloads</h2></div>${X}</div>
     <p class="muted">This browser didn't open the share sheet, so the file was downloaded instead. To put it in Google Drive, open the Files app, long-press the backup file, and choose Share → Drive.</p>
     <p class="note">Details: share ${yn(diag.share)} · canShare ${yn(diag.canShare)} · json ${yn(diag.json)} · txt ${yn(diag.txt)}${diag.err ? " · " + esc(diag.err) : ""} · v${VERSION}</p>
     <div class="btnrow"><button class="btn primary" data-close>OK</button></div>`);
@@ -89,7 +89,7 @@ $("#jsonIn").addEventListener("change", async e => {
     if (j.app !== "fuel-log" || typeof j.days !== "object") throw 0;
     pendingImport = j;
     const nDays = Object.keys(j.days).length, nFoods = Object.keys(j.foods || {}).length;
-    openSheet(`<div class="sheet-head"><div><div class="eyebrow">Restore</div><h2>Merge this backup?</h2></div><button class="icon-btn" data-close aria-label="Close">×</button></div>
+    openSheet(`<div class="sheet-head"><div><div class="label">Restore</div><h2>Merge this backup?</h2></div>${X}</div>
       <p class="muted">Backup from ${esc(new Date(j.exported).toLocaleString())}: ${nDays} logged days and ${nFoods} saved foods. Entries are merged with what's already on this phone, so nothing here is deleted.</p>
       <div class="btnrow"><button class="btn" data-close>Cancel</button><button class="btn primary" data-act="do-import">Merge backup</button></div>`);
   } catch { toast("That file isn't a Fuel Log backup."); }
@@ -136,7 +136,7 @@ async function offSearch(q, signal) {
   if (searchCache.has(key)) return searchCache.get(key);
   const url = `${OFF}/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=24&sort_by=unique_scans_n&tagtype_0=countries&tag_contains_0=contains&tag_0=united-states&fields=${OFF_FIELDS}`;
   let lastErr;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const r = await fetch(url, { signal });
       if (!r.ok) throw new Error("http " + r.status);
@@ -147,7 +147,7 @@ async function offSearch(q, signal) {
     } catch (e) {
       if (signal && signal.aborted) throw e;
       lastErr = e;
-      await new Promise(r => setTimeout(r, 1500));
+      if (attempt < 2) await new Promise(r => setTimeout(r, attempt ? 2600 : 1200));
     }
   }
   throw lastErr;
@@ -170,12 +170,6 @@ function fromOFF(p) {
   const name = (p.product_name || p.generic_name || "").trim();
   if (!name) return null;
   return cleanItem({ ...vals, name, brand: String(p.brands || "").split(",")[0].trim(), serving }, { per100: per100 || null, grams, barcode: p.code || null });
-}
-function fromCommon(row) {
-  const [name, s, g, kcal, protein, carbs, fat, fiber] = row;
-  const vals = { kcal, protein, carbs, fat, fiber };
-  const per100 = {}; for (const k of NUTR) per100[k] = (vals[k] || 0) * 100 / g;
-  return cleanItem({ ...vals, name, serving: `${s} (${r1(g)} g)` }, { per100, grams: g, common: true });
 }
 
 /* ---------- barcode ---------- */
@@ -253,7 +247,7 @@ async function lookupBarcode(code) {
 }
 function notFound(code, why) {
   S.pendingBarcode = code;
-  openSheet(`<div class="sheet-head"><div><div class="eyebrow">Barcode ${esc(code)}</div><h2>Product not found</h2></div><button class="icon-btn" data-close aria-label="Close">×</button></div>
+  openSheet(`<div class="sheet-head"><div><div class="label">Barcode ${esc(code)}</div><h2>Product not found</h2></div>${X}</div>
     <p class="muted">${esc(why)} Scan its Nutrition Facts label once and it's saved to this barcode, so the next scan logs it instantly.</p>
     <div class="stack" style="margin-top:16px">
       <button class="btn primary block" data-act="label-for">${I.label} Scan the nutrition label</button>
@@ -339,7 +333,7 @@ function parseLabel(raw) {
 }
 function flowLabel(barcode) {
   pickPhoto(async file => {
-    openSheet(`<div class="working"><div class="spinner"></div><h2>Reading the label…</h2><p class="muted" id="ocrMsg">${ocrWorker ? "Recognizing text" : "Getting the text reader ready. The first time takes a little longer."}</p><div class="progress"><span id="ocrBar"></span></div><button class="btn ghost" data-close style="margin-top:14px">Cancel</button></div>`);
+    openSheet(`<div class="working"><div class="loader"></div><h2>Reading the label…</h2><p class="muted" id="ocrMsg">${ocrWorker ? "Recognizing text" : "Getting the text reader ready. The first time takes a little longer."}</p><div class="progress"><span id="ocrBar"></span></div><button class="btn small" data-close style="margin-top:16px">Cancel</button></div>`);
     let cancelled = false; sheetCleanup = () => { cancelled = true; };
     ocrProgress = m => {
       const bar = $("#ocrBar"), msg = $("#ocrMsg"); if (!bar) return;
@@ -389,9 +383,9 @@ function closeSheet() {
   stopScan(); if (searchCtl) searchCtl.abort();
   $("#sheet").hidden = true; $("#sheet").innerHTML = ""; document.body.classList.remove("locked");
 }
-function working(title, sub) { openSheet(`<div class="working"><div class="spinner"></div><h2>${esc(title)}</h2><p class="muted">${esc(sub || "")}</p><button class="btn ghost" data-close>Cancel</button></div>`); }
+function working(title, sub) { openSheet(`<div class="working"><div class="loader"></div><h2>${esc(title)}</h2><p class="muted">${esc(sub || "")}</p><button class="btn small" data-close style="margin-top:6px">Cancel</button></div>`); }
 function errorSheet(title, msg, retry) {
-  openSheet(`<div class="sheet-head"><div><h2>${esc(title)}</h2></div><button class="icon-btn" data-close aria-label="Close">×</button></div>
+  openSheet(`<div class="sheet-head"><div><h2>${esc(title)}</h2></div>${X}</div>
     <p class="muted">${esc(msg)}</p>
     <div class="stack" style="margin-top:16px">${retry ? `<button class="btn primary block" data-act="retry">Try again</button>` : ""}<button class="btn block" data-act="manual">Enter it by hand</button></div>`,
     el => { const b = el.querySelector('[data-act="retry"]'); if (b) b.onclick = retry; });
@@ -399,126 +393,165 @@ function errorSheet(title, msg, retry) {
 
 /* ---------- icons ---------- */
 const I = {
-  barcode: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7V5h3M17 5h3v2M20 17v2h-3M7 19H4v-2M7 9v6M10 9v6M13 9v6M16 9v6"/></svg>`,
-  label: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 10.5h8M8 14h5M8 17h6"/></svg>`,
-  search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>`,
-  quick: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg>`,
-  prev: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg>`,
-  next: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>`
+  barcode: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3.5 7V4.5H7M17 4.5h3.5V7M20.5 17v2.5H17M7 19.5H3.5V17M7.5 8.5v7M10.5 8.5v7M13.5 8.5v7M16.5 8.5v7"/></svg>`,
+  label: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 3h14v18H5z"/><path d="M5 7.5h14" stroke-width="2.6"/><path d="M8 11h8M8 14h8M8 17h5"/></svg>`,
+  search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M20 20l-5-5"/></svg>`,
+  quick: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2.5L4.5 13.5h6.5l-1 8 8.5-11h-6.5z"/></svg>`,
+  prev: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>`,
+  next: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>`,
+  x: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`,
+  plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`
 };
+const X = `<button class="x" data-close aria-label="Close">${I.x}</button>`;
+
+/* ---------- motion helpers ---------- */
+const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const prevBars = {};
+// Bars render at their previous width, then glide to the new one.
+function animateBars(root) {
+  const els = root.querySelectorAll("[data-w]");
+  els.forEach(el => { const k = el.dataset.key; el.style.width = (prevBars[k] ?? 0) + "%"; });
+  requestAnimationFrame(() => requestAnimationFrame(() => els.forEach(el => { el.style.width = el.dataset.w + "%"; prevBars[el.dataset.key] = +el.dataset.w; })));
+}
+let shownKcal = null;
+function countUp(el, to) {
+  const from = shownKcal == null ? to : shownKcal; shownKcal = to;
+  if (from === to || reduceMotion()) { el.textContent = fmt(to); return; }
+  const t0 = performance.now(), dur = 650;
+  const step = now => { const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(from + (to - from) * e); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
 
 /* ---------- header & banners ---------- */
 function renderTop() {
-  $("#top").innerHTML = S.view === "day"
-    ? `<div class="brand"><i></i>Fuel Log</div><div class="datenav"><button data-act="day-prev" aria-label="Previous day">${I.prev}</button><button class="lbl" data-act="day-today">${esc(dayLabel(S.date))}</button><button data-act="day-next" aria-label="Next day">${I.next}</button></div>`
-    : `<div class="brand"><i></i>Fuel Log</div>`;
+  const away = S.view === "day" && S.date !== todayKey();
+  $("#top").innerHTML = `<div class="mark"><i></i>Fuel Log</div>${away ? `<button class="today-chip" data-act="day-today">Back to today</button>` : ""}`;
   document.querySelectorAll(".tabbar a").forEach(a => { if (a.dataset.view === S.view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
 }
 function banners() {
   let h = "";
-  if (!storageOK) h += `<div class="banner warn">This browser isn't letting the app save. Private browsing blocks storage; open it in a normal tab.</div>`;
+  if (!storageOK) h += `<div class="banner warn"><span>This browser isn't letting the app save. Private browsing blocks storage; open it in a normal tab.</span></div>`;
   const st = settings(), loggedDays = Object.keys(S.days).length;
-  if (loggedDays >= 5 && Date.now() - (st.lastBackup || 0) > 14 * 864e5) h += `<div class="banner">Your log lives only on this phone. Save a backup now and then.<button class="btn ghost" data-act="backup">Back up</button></div>`;
+  if (loggedDays >= 5 && Date.now() - (st.lastBackup || 0) > 14 * 864e5) h += `<div class="banner"><span>Your log lives only on this phone. Save a backup now and then.</span><button class="link" data-act="backup">Back up</button></div>`;
   return h;
 }
 
 /* ---------- day view ---------- */
-function ringSVG(pct, over) {
-  const R = 54, C = 2 * Math.PI * R, p = Math.min(pct, 1);
-  return `<svg viewBox="0 0 132 132" aria-hidden="true"><circle cx="66" cy="66" r="${R}" fill="none" stroke="var(--surface-2)" stroke-width="12"/>
-    <circle cx="66" cy="66" r="${R}" fill="none" stroke="${over ? "var(--over)" : "var(--accent)"}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${(C * p).toFixed(1)} ${C.toFixed(1)}"/></svg>`;
-}
-function macroBlock(label, color, have, goal) {
-  const pct = goal ? Math.min(100, have / goal * 100) : 0;
-  return `<div class="macro"><div class="row">${label}<b>${fmt(have)}g</b></div><div class="bar"><span style="width:${pct}%;background:${color}"></span></div><div class="of">of ${fmt(goal)}g · ${have > goal ? fmt(have - goal) + "g over" : fmt(goal - have) + "g left"}</div></div>`;
+function relDay(k) {
+  const t = todayKey();
+  return k === t ? "Today" : k === addDays(t, -1) ? "Yesterday" : k === addDays(t, 1) ? "Tomorrow" : "";
 }
 function entryRow(e) {
   const q = e.qty == null ? 1 : num(e.qty);
-  return `<button class="entry" data-act="edit-entry" data-id="${esc(e.id)}">
+  const serv = q !== 1 ? `${r1(q)} × ${e.serving || "serving"}` : (e.serving || "");
+  return `<button class="row" data-act="edit-entry" data-id="${esc(e.id)}">
     <div class="main"><div class="nm">${esc(e.name)}</div>
-    <div class="sub">${q !== 1 ? `<span>${r1(q)} × ${esc(e.serving || "serving")}</span>` : e.serving ? `<span>${esc(e.serving)}</span>` : ""}<span class="p">P ${fmt(num(e.protein) * q)}</span><span class="c">C ${fmt(num(e.carbs) * q)}</span><span class="f">F ${fmt(num(e.fat) * q)}</span></div></div>
+    <div class="sub">${serv ? `<span>${esc(serv)}</span>` : ""}<span class="mac"><span class="p">${fmt(num(e.protein) * q)}</span><span class="c">${fmt(num(e.carbs) * q)}</span><span class="f">${fmt(num(e.fat) * q)}</span></span></div></div>
     <div class="k">${fmt(num(e.kcal) * q)}</div></button>`;
+}
+function dvRow(name, have, goal, color, key, unit = "g") {
+  const p = goal ? have / goal * 100 : 0;
+  return `<div class="dv"><div class="n"><b>${name}</b> <span>${fmt(have)}${unit} / ${fmt(goal)}${unit}</span></div><div class="pct ${p > 115 ? "over" : ""}">${r0(p)}%</div>
+    <div class="track"><i data-key="${key}" data-w="${Math.min(p, 100).toFixed(1)}" style="background:${color}"></i></div></div>`;
 }
 function renderDay() {
   const st = settings(), g = st.goals, list = entriesOf(S.date), t = totals(list);
-  const left = g.kcal - t.kcal, over = left < 0;
+  const left = g.kcal - t.kcal, over = left < 0, d = parseKey(S.date), rel = relDay(S.date);
+  const wd = d.toLocaleDateString(undefined, { weekday: "long" });
+  const kicker = rel ? `${rel} · ${wd}` : `${wd} · ${d.getFullYear()}`;
+  const title = d.toLocaleDateString(undefined, { month: "long", day: "numeric" });
+  const byMeal = MEALS.map(m => list.filter(e => (e.meal || "Snacks") === m));
+  const mk = byMeal.map(es => totals(es).kcal);
+  const scale = Math.max(g.kcal, t.kcal) || 1;
+  const segs = mk.map((v, i) => `<i class="m${i}" data-key="seg${i}" data-w="${(v / scale * 100).toFixed(2)}"></i>`).join("");
+  const ovr = over ? `<i class="ovr" style="position:absolute;left:${(g.kcal / scale * 100).toFixed(2)}%;right:0;top:0;bottom:0;border:0"></i><span class="tick" style="left:calc(${(g.kcal / scale * 100).toFixed(2)}% - 1px)"></span>` : "";
   let h = banners();
-  if (!st.goalsSet) h += `<div class="banner">Your target is the 2,000 kcal default.<button class="btn ghost" data-act="go-goals">Set goals</button></div>`;
-  h += `<section class="card"><div class="summary">
-      <div class="ring">${ringSVG(g.kcal ? t.kcal / g.kcal : 0, over)}<div class="center"><div class="big">${fmt(Math.abs(left))}</div><div class="small">${over ? "kcal over" : "kcal left"}</div></div></div>
-      <dl class="kv"><dt>Eaten</dt><dd>${fmt(t.kcal)}</dd><dt>Target</dt><dd>${fmt(g.kcal)}</dd><dt>Fiber</dt><dd>${fmt(t.fiber)} / ${fmt(g.fiber)}g</dd></dl>
-    </div>
-    <div class="macros">${macroBlock("Protein", "var(--pro)", t.protein, g.protein)}${macroBlock("Carbs", "var(--carb)", t.carbs, g.carbs)}${macroBlock("Fat", "var(--fat)", t.fat, g.fat)}</div>
-  </section>`;
-  if (!list.length) {
-    h += `<section class="card empty" style="margin-top:14px"><h2>Nothing logged ${S.date === todayKey() ? "yet today" : "for this day"}</h2>
-      <p>Scan a barcode or nutrition label, or search for a food.</p>
-      <button class="btn primary" data-act="open-add">Add food</button></section>`;
-  } else {
-    h += `<div class="stack" style="margin-top:14px">`;
-    for (const m of MEALS) {
-      const es = list.filter(e => (e.meal || "Snacks") === m);
-      h += `<section class="card"><div class="meal-head"><h3>${m}</h3><span class="kc">${es.length ? fmt(totals(es).kcal) + " kcal" : ""}</span><button class="add-mini" data-act="open-add" data-meal="${m}" aria-label="Add to ${m}">+</button></div>
-        ${es.length ? es.map(entryRow).join("") : `<div class="meal-empty">Nothing yet</div>`}</section>`;
-    }
-    h += `</div>`;
-  }
-  $("#main").innerHTML = h;
+  if (!st.goalsSet) h += `<div class="banner"><span>Your target is the 2,000 kcal default. Set one that fits you.</span><button class="link" data-act="go-goals">Set goals</button></div>`;
+  h += `<section class="dateline"><div class="dl"><div class="label">${esc(kicker)}</div><h1>${esc(title)}</h1></div>
+      <div class="arrows"><button class="arrow" data-act="day-prev" aria-label="Previous day">${I.prev}</button><button class="arrow" data-act="day-next" aria-label="Next day">${I.next}</button></div></section>
+    <section class="facts" aria-label="Daily totals">
+      <div class="facts-head"><h2>Daily Facts</h2><span class="label">Target ${fmt(g.kcal)}</span></div>
+      <div class="rule-xl"></div>
+      <div class="cal-row"><div class="cw"><small>${over ? "Over target" : "Remaining"}</small>Calories</div><div class="cal-num ${over ? "over" : ""}" id="calNum">${fmt(Math.abs(left))}</div></div>
+      <div class="meter" role="img" aria-label="${fmt(t.kcal)} of ${fmt(g.kcal)} calories eaten">${segs}${ovr}</div>
+      <div class="meter-key"><span>${MEALS.map((m, i) => `${m[0]} <b>${fmt(mk[i])}</b>`).join(" · ")}</span><span><b>${fmt(t.kcal)}</b> eaten</span></div>
+      <div class="rule-l"></div>
+      <div class="dv-head label"><span>Amount / target</span><span>% Goal</span></div>
+      ${dvRow("Protein", t.protein, g.protein, "var(--pro)", "dvp")}${dvRow("Carbs", t.carbs, g.carbs, "var(--carb)", "dvc")}${dvRow("Fat", t.fat, g.fat, "var(--fat)", "dvf")}${dvRow("Fiber", t.fiber, g.fiber, "var(--ink-2)", "dvb")}
+    </section>
+    <div class="meals">${MEALS.map((m, i) => {
+      const es = byMeal[i];
+      return `<section class="meal"><header class="meal-h"><h2>${m}</h2><span class="lead"></span><span class="k">${es.length ? `${fmt(mk[i])}<small>KCAL</small>` : `<small>—</small>`}</span></header>
+        ${es.map(entryRow).join("")}<button class="meal-add" data-act="open-add" data-meal="${m}">${I.plus}Add to ${m.toLowerCase()}</button></section>`;
+    }).join("")}</div>`;
+  const main = $("#main"); main.innerHTML = h;
+  animateBars(main);
+  const cn = $("#calNum"); if (cn) countUp(cn, Math.abs(left));
 }
 
-/* ---------- calendar ---------- */
+/* ---------- history ---------- */
 function dayStatus(k) {
   const l = entriesOf(k); if (!l.length) return "";
   const p = totals(l).kcal / (settings().goals.kcal || 2000);
   return p < 0.85 ? "under" : p <= 1.1 ? "on" : "over";
 }
+function streak() {
+  let k = todayKey(), n = 0;
+  if (!entriesOf(k).length) k = addDays(k, -1);
+  while (entriesOf(k).length) { n++; k = addDays(k, -1); }
+  return n;
+}
 function renderCalendar() {
   const [y, m] = S.calMonth.split("-").map(Number);
-  const first = new Date(y, m - 1, 1), dim = new Date(y, m, 0).getDate(), lead = first.getDay(), tk = todayKey();
+  const first = new Date(y, m - 1, 1), dim = new Date(y, m, 0).getDate(), lead = first.getDay(), tk = todayKey(), gk = settings().goals.kcal || 2000;
   let cells = ["S", "M", "T", "W", "T", "F", "S"].map(d => `<div class="dow">${d}</div>`).join("");
   for (let i = 0; i < lead; i++) cells += `<div class="day out"></div>`;
   const monthKeys = [];
   for (let d = 1; d <= dim; d++) {
     const k = keyOf(new Date(y, m - 1, d)), st = dayStatus(k), l = entriesOf(k), kc = totals(l).kcal;
     if (l.length) monthKeys.push(k);
-    cells += `<button class="day ${st ? "st-" + st : ""} ${k > tk ? "future" : ""} ${k === tk ? "today" : ""} ${k === S.date ? "sel" : ""}" data-act="cal-day" data-k="${k}" aria-label="${parseKey(k).toDateString()}${l.length ? ", " + fmt(kc) + " kcal" : ""}">
-      <span class="d">${d}</span><span class="kc">${l.length ? fmt(kc) : ""}</span></button>`;
+    cells += `<button class="day ${st ? "st-" + st : ""} ${k > tk ? "future" : ""} ${k === tk ? "today" : ""} ${k === S.date ? "sel" : ""}" data-act="cal-day" data-k="${k}" aria-label="${esc(parseKey(k).toDateString())}${l.length ? ", " + fmt(kc) + " kcal" : ""}">
+      <span class="d">${d}</span>${l.length ? `<span class="fill" style="height:${Math.min(100, kc / gk * 100).toFixed(1)}%"></span>` : ""}</button>`;
   }
   const g = settings().goals, n = monthKeys.length;
   const sums = monthKeys.map(k => totals(entriesOf(k)));
   const avg = f => n ? sums.reduce((a, s) => a + s[f], 0) / n : 0;
   const onT = monthKeys.filter(k => dayStatus(k) === "on").length;
-  const label = first.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-  $("#main").innerHTML = banners() + `<section class="card"><div class="cal-head"><h2>${esc(label)}</h2>
-      <div class="datenav"><button data-act="cal-prev" aria-label="Previous month">${I.prev}</button><button data-act="cal-next" aria-label="Next month">${I.next}</button></div></div>
+  const sk = streak();
+  const mname = first.toLocaleDateString(undefined, { month: "long" });
+  $("#main").innerHTML = banners() + `<section class="hist-head"><div class="dl"><div class="label">History · ${y}${sk > 1 ? ` · ${sk}-day streak` : ""}</div><h1>${esc(mname)}</h1></div>
+      <div class="arrows"><button class="arrow" data-act="cal-prev" aria-label="Previous month">${I.prev}</button><button class="arrow" data-act="cal-next" aria-label="Next month">${I.next}</button></div></section>
     <div class="cal">${cells}</div>
-    <div class="legend"><span><i style="background:var(--on)"></i>Within 85–110% of target</span><span><i style="background:var(--under)"></i>Under</span><span><i style="background:var(--over)"></i>Over</span></div></section>
-  <h3 style="margin:20px 0 10px">${esc(first.toLocaleDateString(undefined, { month: "long" }))}</h3>
-  <div class="stats">
-    <div class="stat"><b>${n}</b><span>days logged</span></div>
-    <div class="stat"><b>${onT}</b><span>days on target</span></div>
-    <div class="stat"><b>${n ? fmt(avg("kcal")) : "–"}</b><span>avg kcal / day</span></div>
-    <div class="stat"><b>${n ? fmt(avg("protein")) + "g" : "–"}</b><span>avg protein / day</span></div>
-  </div>
-  <section class="card chart" style="margin-top:14px"><h3>Last 14 days</h3><p class="note" style="margin:2px 0 10px">Calories per day. The dashed line is your ${fmt(g.kcal)} kcal target.</p>${chart14()}</section>`;
+    <div class="legend"><span><i style="background:var(--good)"></i>On target</span><span><i style="background:var(--ink-3);opacity:.5"></i>Under</span><span><i class="ovr"></i>Over</span><span>Fill = share of target</span></div>
+    <div class="spec">
+      <div><b>${n}</b><span class="label">Days logged</span></div>
+      <div><b>${onT}</b><span class="label">On target (85–110%)</span></div>
+      <div><b>${n ? fmt(avg("kcal")) : "–"}</b><span class="label">Avg calories</span></div>
+      <div><b>${n ? fmt(avg("protein")) : "–"}${n ? "<small>g</small>" : ""}</b><span class="label">Avg protein</span></div>
+    </div>
+    <div class="section-h"><h2>Last 14 days</h2><span class="label">Target ${fmt(g.kcal)}</span></div>
+    <div class="chart">${chart14()}</div>`;
 }
 function chart14() {
   const tk = todayKey(), g = settings().goals.kcal || 2000;
   const days = Array.from({ length: 14 }, (_, i) => addDays(tk, i - 13));
   const vals = days.map(k => totals(entriesOf(k)).kcal);
   const max = Math.max(g * 1.25, ...vals) || 1;
-  const W = 340, H = 150, padL = 34, padB = 20, padT = 8, iw = W - padL - 4, ih = H - padB - padT, bw = iw / 14;
+  const W = 340, H = 160, padL = 30, padB = 22, padT = 6, iw = W - padL, ih = H - padB - padT, bw = iw / 14;
   const y = v => padT + ih - (v / max) * ih;
   const step = max > 3000 ? 1000 : 500;
-  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Calories for the last 14 days">`;
-  for (let t = 0; t <= max; t += step) s += `<line x1="${padL}" x2="${W - 4}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)" stroke-width="1"/><text x="${padL - 6}" y="${y(t) + 3.5}" text-anchor="end" font-size="9.5" fill="var(--ink-3)">${t >= 1000 ? (t / 1000) + "k" : t}</text>`;
+  const mono = `style="font-family:var(--mono)"`;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Calories for the last 14 days"><defs><pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="var(--over)" opacity=".35"/><rect width="2.5" height="5" fill="var(--over)"/></pattern></defs>`;
+  for (let t = 0; t <= max; t += step) s += `<line x1="${padL}" x2="${W}" y1="${y(t)}" y2="${y(t)}" stroke="var(--hair)" stroke-width="1"/><text x="${padL - 6}" y="${y(t) + 3}" text-anchor="end" font-size="9" fill="var(--ink-3)" ${mono}>${t >= 1000 ? (t / 1000) + "k" : t}</text>`;
   days.forEach((k, i) => {
-    const v = vals[i], x = padL + i * bw + bw * 0.18, w = bw * 0.64, st = dayStatus(k);
-    const col = st === "over" ? "var(--over)" : st === "on" ? "var(--on)" : "var(--under)";
-    if (v > 0) s += `<rect x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${w.toFixed(1)}" height="${(padT + ih - y(v)).toFixed(1)}" rx="3" fill="${col}"><title>${dayLabel(k)}: ${fmt(v)} kcal</title></rect>`;
-    if (i % 2 === 1) s += `<text x="${(x + w / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="9.5" fill="${i === 13 ? "var(--ink)" : "var(--ink-3)"}">${parseKey(k).getDate()}</text>`;
+    const v = vals[i], x = padL + i * bw + bw * 0.2, w = bw * 0.6, st = dayStatus(k);
+    const col = st === "over" ? "url(#hatch)" : st === "on" ? "var(--good)" : "var(--ink-3)";
+    if (v > 0) s += `<rect x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${w.toFixed(1)}" height="${(padT + ih - y(v)).toFixed(1)}" rx="1.5" fill="${col}" ${st === "under" ? 'opacity=".55"' : ""}><title>${esc(dayLabel(k))}: ${fmt(v)} kcal</title></rect>`;
+    else s += `<rect x="${x.toFixed(1)}" y="${(padT + ih - 2).toFixed(1)}" width="${w.toFixed(1)}" height="2" fill="var(--hair)"/>`;
+    const dd = parseKey(k);
+    s += `<text x="${(x + w / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="9" font-weight="${i === 13 ? 600 : 400}" fill="${i === 13 ? "var(--ink)" : "var(--ink-3)"}" ${mono}>${i % 2 === 1 || i === 13 ? dd.getDate() : "SMTWTFS"[dd.getDay()]}</text>`;
   });
-  s += `<line x1="${padL}" x2="${W - 4}" y1="${y(g)}" y2="${y(g)}" stroke="var(--ink-2)" stroke-width="1.2" stroke-dasharray="4 3"/></svg>`;
+  s += `<line x1="${padL}" x2="${W}" y1="${y(g)}" y2="${y(g)}" stroke="var(--signal)" stroke-width="1.5" stroke-dasharray="5 4"/></svg>`;
   return s;
 }
 
@@ -536,59 +569,58 @@ function calc(p) {
   return { bmr, tdee, kcal, protein, fat, carbs, fiber: Math.round(kcal / 1000 * 14), floored: tdee + p.pace < floor };
 }
 function calcOut(c) {
-  return `<div><b>${fmt(c.bmr)}</b><span>resting burn (kcal)</span></div><div><b>${fmt(c.tdee)}</b><span>daily burn with activity</span></div>
-    <div><b>${fmt(c.kcal)}</b><span>suggested target${c.floored ? " (safe minimum)" : ""}</span></div><div><b>${c.protein} / ${c.carbs} / ${c.fat}</b><span>protein / carbs / fat (g)</span></div>`;
+  return `<div><b>${fmt(c.bmr)}</b><span class="label">Resting burn</span></div><div><b>${fmt(c.tdee)}</b><span class="label">With activity</span></div>
+    <div><b>${fmt(c.kcal)}</b><span class="label">Suggested target${c.floored ? " (safe minimum)" : ""}</span></div><div><b>${c.protein}/${c.carbs}/${c.fat}</b><span class="label">Protein / carbs / fat g</span></div>`;
+}
+function splitHTML(g) {
+  const gk = num(g.kcal) || 1, pp = num(g.protein) * 4 / gk * 100, cp = num(g.carbs) * 4 / gk * 100, fp = num(g.fat) * 9 / gk * 100;
+  return { bar: `<span style="width:${Math.min(pp, 100)}%;background:var(--pro)"></span><span style="width:${Math.min(cp, 100)}%;background:var(--carb)"></span><span style="width:${Math.min(fp, 100)}%;background:var(--fat)"></span>`,
+    note: `Protein ${r0(pp)}% · Carbs ${r0(cp)}% · Fat ${r0(fp)}% of calories${Math.abs(pp + cp + fp - 100) > 6 ? `. Your macros add up to ${fmt(num(g.protein) * 4 + num(g.carbs) * 4 + num(g.fat) * 9)} kcal.` : ""}` };
 }
 function renderGoals() {
   const st = settings();
   if (!G) G = { profile: { ...st.profile }, goals: { ...st.goals }, units: st.units };
   const p = G.profile, us = G.units === "us", c = calc(p);
   const ft = Math.floor(p.heightCm / 2.54 / 12), inch = Math.round(p.heightCm / 2.54 - ft * 12);
-  const g = G.goals, gk = num(g.kcal) || 1;
-  const pp = num(g.protein) * 4 / gk * 100, cp = num(g.carbs) * 4 / gk * 100, fp = num(g.fat) * 9 / gk * 100;
+  const g = G.goals, sp = splitHTML(g);
   const days = Object.keys(S.days).length, foods = Object.keys(S.foods).length;
   const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+  const trow = (k, name, color, unit, big) => `<div class="trow ${big ? "big" : ""}"><span class="tn">${color ? `<i style="background:${color}"></i>` : ""}${name}</span><input id="g-${k}" inputmode="numeric" value="${r0(g[k])}" aria-label="${name} target"><span class="u">${unit}</span></div>`;
   $("#main").innerHTML = banners() + `
-  <section class="card">
-    <div class="eyebrow">Daily targets</div><h2 style="margin:2px 0 14px">What you're aiming for</h2>
-    <div class="form">
-      <label class="full">Calories (kcal)<input id="g-kcal" inputmode="numeric" value="${r0(g.kcal)}"></label>
-      <label>Protein (g)<input id="g-protein" inputmode="numeric" value="${r0(g.protein)}"></label>
-      <label>Carbs (g)<input id="g-carbs" inputmode="numeric" value="${r0(g.carbs)}"></label>
-      <label>Fat (g)<input id="g-fat" inputmode="numeric" value="${r0(g.fat)}"></label>
-      <label>Fiber (g)<input id="g-fiber" inputmode="numeric" value="${r0(g.fiber)}"></label>
-    </div>
-    <div class="split" aria-hidden="true"><span style="width:${Math.min(pp, 100)}%;background:var(--pro)"></span><span style="width:${Math.min(cp, 100)}%;background:var(--carb)"></span><span style="width:${Math.min(fp, 100)}%;background:var(--fat)"></span></div>
-    <p class="note">Protein ${r0(pp)}% · Carbs ${r0(cp)}% · Fat ${r0(fp)}% of calories${Math.abs(pp + cp + fp - 100) > 6 ? `. Your macros add up to ${fmt(num(g.protein) * 4 + num(g.carbs) * 4 + num(g.fat) * 9)} kcal.` : ""}</p>
-    <button class="btn primary block" style="margin-top:14px" data-act="save-goals">Save targets</button>
+  <section class="hist-head"><div class="dl"><div class="label">Goals</div><h1>Daily targets</h1></div></section>
+  <section class="targets">
+    <div class="facts-head"><h2>Per day</h2><span class="label">${st.goalsSet ? "Saved" : "Default"}</span></div>
+    <div class="rule-xl"></div>
+    ${trow("kcal", "Calories", "", "kcal", true)}${trow("protein", "Protein", "var(--pro)", "g")}${trow("carbs", "Carbs", "var(--carb)", "g")}${trow("fat", "Fat", "var(--fat)", "g")}${trow("fiber", "Fiber", "var(--ink-2)", "g")}
+    <div class="split" id="g-split" aria-hidden="true">${sp.bar}</div>
+    <p class="note" id="g-note">${sp.note}</p>
   </section>
+  <button class="btn primary block" style="margin-top:12px" data-act="save-goals">Save targets</button>
 
-  <section class="card" style="margin-top:14px">
-    <div class="eyebrow">Calculator</div><h2 style="margin:2px 0 4px">Work out a starting point</h2>
-    <p class="muted" style="margin:0 0 14px;font-size:13.5px">Uses the Mifflin–St Jeor equation for resting burn, multiplied by your activity level.</p>
-    <div class="form">
-      <label class="full">Units<div class="seg"><button data-act="units" data-u="us" aria-pressed="${us}">lb / ft</button><button data-act="units" data-u="metric" aria-pressed="${!us}">kg / cm</button></div></label>
-      <label class="full">Sex<div class="seg"><button data-act="sex" data-s="male" aria-pressed="${p.sex === "male"}">Male</button><button data-act="sex" data-s="female" aria-pressed="${p.sex === "female"}">Female</button></div></label>
-      <label>Age<input id="p-age" inputmode="numeric" value="${r0(p.age)}"></label>
-      <label>Weight (${us ? "lb" : "kg"})<input id="p-wt" inputmode="decimal" value="${us ? r0(p.weightKg * 2.20462) : r1(p.weightKg)}"></label>
-      <label class="full">Height${us ? `<div class="hpair"><input id="p-ft" inputmode="numeric" value="${ft}" aria-label="Feet"><input id="p-in" inputmode="numeric" value="${inch}" aria-label="Inches"></div>` : `<input id="p-cm" inputmode="numeric" value="${r0(p.heightCm)}">`}</label>
-      <label class="full">Activity<select id="p-act">${ACT.map(([v, l]) => `<option value="${v}" ${v === p.activity ? "selected" : ""}>${l}</option>`).join("")}</select></label>
-      <label class="full">Goal<select id="p-pace">${PACE.map(([v, l]) => `<option value="${v}" ${v === p.pace ? "selected" : ""}>${l}</option>`).join("")}</select></label>
-    </div>
-    <div class="result" id="calc-out">${calcOut(c)}</div>
-    <button class="btn block" style="margin-top:14px" data-act="use-calc">Use these targets</button>
-    <p class="note">If your Garmin shows a big active-calorie burn on training days, eat a bit more on those days rather than raising the everyday target. These are estimates, not medical advice.</p>
-  </section>
+  <div class="section-h"><h2>Calculator</h2><span class="label">Mifflin–St Jeor</span></div>
+  <p class="muted" style="margin:0 0 14px;font-size:14px">Estimates your resting burn, then multiplies by how active you are.</p>
+  <div class="form">
+    <div class="field full"><span class="label">Units</span><div class="seg"><button data-act="units" data-u="us" aria-pressed="${us}">lb / ft</button><button data-act="units" data-u="metric" aria-pressed="${!us}">kg / cm</button></div></div>
+    <div class="field full"><span class="label">Sex</span><div class="seg"><button data-act="sex" data-s="male" aria-pressed="${p.sex === "male"}">Male</button><button data-act="sex" data-s="female" aria-pressed="${p.sex === "female"}">Female</button></div></div>
+    <label class="field"><span class="label">Age</span><input id="p-age" inputmode="numeric" value="${r0(p.age)}"></label>
+    <label class="field"><span class="label">Weight (${us ? "lb" : "kg"})</span><input id="p-wt" inputmode="decimal" value="${us ? r0(p.weightKg * 2.20462) : r1(p.weightKg)}"></label>
+    <div class="field full"><span class="label">Height</span>${us ? `<div class="hpair"><input id="p-ft" inputmode="numeric" value="${ft}" aria-label="Feet"><input id="p-in" inputmode="numeric" value="${inch}" aria-label="Inches"></div>` : `<input id="p-cm" inputmode="numeric" value="${r0(p.heightCm)}" aria-label="Centimeters">`}</div>
+    <label class="field full"><span class="label">Activity</span><select id="p-act">${ACT.map(([v, l]) => `<option value="${v}" ${v === p.activity ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    <label class="field full"><span class="label">Goal</span><select id="p-pace">${PACE.map(([v, l]) => `<option value="${v}" ${v === p.pace ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+  </div>
+  <div class="result" id="calc-out">${calcOut(c)}</div>
+  <button class="btn block" style="margin-top:14px" data-act="use-calc">Use these targets</button>
+  <p class="note">If your Garmin shows a big active-calorie burn on training days, eat a bit more on those days rather than raising the everyday target. These are estimates, not medical advice.</p>
 
-  <section class="card" style="margin-top:14px">
-    <div class="eyebrow">Your data</div><h2 style="margin:2px 0 6px">Stored on this phone</h2>
-    <p class="muted" style="margin:0;font-size:13.5px">${days} logged ${days === 1 ? "day" : "days"} and ${foods} saved ${foods === 1 ? "food" : "foods"}. Nothing is sent anywhere except barcode and search lookups to Open Food Facts. Last backup: ${st.lastBackup ? esc(new Date(st.lastBackup).toLocaleDateString()) : "never"}.</p>
-    <div class="btnrow"><button class="btn" data-act="backup">Back up</button><button class="btn" data-act="restore">Restore</button></div>
-    ${foods ? `<button class="link-btn" style="margin-top:8px" data-act="manage-foods">Manage saved foods</button>` : ""}
-    <p class="note" style="text-align:center">Fuel Log version ${VERSION}</p>
-    ${standalone ? "" : `<p class="note">To use it like an app: in Safari tap Share, then Add to Home Screen. In Chrome, open the ⋮ menu and choose Add to Home screen. Data saved in a home-screen app is also safer from being cleared by the browser.</p>`}
-  </section>`;
+  <div class="section-h"><h2>Your data</h2><span class="label">On this phone</span></div>
+  <div class="datasum"><div><b>${days}</b><span class="label">Days logged</span></div><div><b>${foods}</b><span class="label">Saved foods</span></div><div><b>${st.lastBackup ? esc(new Date(st.lastBackup).toLocaleDateString(undefined, { month: "short", day: "numeric" })) : "Never"}</b><span class="label">Last backup</span></div></div>
+  <p class="note">Nothing leaves your phone except barcode and product-search lookups to Open Food Facts.</p>
+  <div class="btnrow"><button class="btn" data-act="backup">Back up</button><button class="btn" data-act="restore">Restore</button></div>
+  ${foods ? `<p style="margin:12px 0 0"><button class="link" data-act="manage-foods">Manage saved foods</button></p>` : ""}
+  ${standalone ? "" : `<p class="note">To use it like an app: in Safari tap Share, then Add to Home Screen. In Chrome, open the ⋮ menu and choose Add to Home screen. Data in a home-screen app is safer from being cleared by the browser.</p>`}
+  <p class="colophon">Fuel Log · v${VERSION} · Food data: USDA FoodData Central, Open Food Facts</p>`;
 }
+function refreshSplit() { const sp = splitHTML(G.goals), b = $("#g-split"), n = $("#g-note"); if (b) b.innerHTML = sp.bar; if (n) n.textContent = sp.note; }
 function readProfile() {
   const p = G.profile, us = G.units === "us", v = id => $("#" + id) ? num($("#" + id).value) : null;
   if (v("p-age")) p.age = v("p-age");
@@ -601,8 +633,8 @@ function readProfile() {
 }
 function openManageFoods() {
   const list = Object.entries(S.foods).sort((a, b) => (a[1].name || "").localeCompare(b[1].name || ""));
-  openSheet(`<div class="sheet-head"><div><div class="eyebrow">${list.length} saved</div><h2>Saved foods</h2></div><button class="icon-btn" data-close aria-label="Close">×</button></div>
-    <div class="list">${list.map(([id, f]) => `<div class="entry"><div class="main"><div class="nm">${esc(f.name)}</div><div class="sub">${f.brand ? `<span>${esc(f.brand)}</span>` : ""}<span>${esc(f.serving || "1 serving")}</span><span>${fmt(f.kcal)} kcal</span>${f.barcode ? `<span>${esc(f.barcode)}</span>` : ""}</div></div><button class="btn danger" style="padding:6px 10px" data-act="del-food" data-id="${esc(id)}">Remove</button></div>`).join("")}</div>
+  openSheet(`<div class="sheet-head"><div><div class="label">${list.length} saved</div><h2>Saved foods</h2></div>${X}</div>
+    <div class="list">${list.map(([id, f]) => `<div class="row"><div class="main"><div class="nm">${esc(f.name)}</div><div class="sub">${f.brand ? `<span>${esc(f.brand)}</span>` : ""}<span>${esc(f.serving || "1 serving")}</span><span>${fmt(f.kcal)} kcal</span></div></div><button class="btn small danger" data-act="del-food" data-id="${esc(id)}">Remove</button></div>`).join("")}</div>
     <p class="note">Removing a saved food doesn't change anything you've already logged.</p>`);
 }
 
@@ -617,33 +649,95 @@ function route() {
 window.addEventListener("hashchange", route);
 function go(view) { const h = view === "day" ? "#log" : "#" + view; if (location.hash !== h) location.hash = h; else route(); }
 
+/* ---------- food database (bundled, works offline) ---------- */
+// usda.json rows: [name, category, kcal, protein, carbs, fat, fiber, sugar, sodium mg, satFat, "portion|grams;..."] per 100 g
+// products.json rows: [barcode, name, brand, serving label, serving grams, kcal, protein, carbs, fat, fiber, sugar, sodium mg, satFat] per 100 g
+const DB = { usda: null, prod: null, loading: null };
+const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/&/g, " and ").replace(/[^a-z0-9%]+/g, " ").trim();
+const stem = w => w.length > 3 ? w.replace(/ies$/, "y").replace(/(?<![aeiou])es$|s$/, "") : w;
+const wordsOf = s => norm(s).split(" ").filter(Boolean).map(stem);
+function loadDB() {
+  if (DB.loading) return DB.loading;
+  const get = u => fetch(u).then(r => r.ok ? r.json() : null).catch(() => null);
+  DB.loading = Promise.all([get("data/usda.json?v=1"), get("data/products.json?v=1")]).then(([u, p]) => {
+    // USDA names read "Base food, details": the base helps "egg" find "Egg, fried" before "Egg burrito"; "NFS" marks the generic version.
+    if (u) DB.usda = u.map(r => ({ r, w: wordsOf(r[0]), len: r[0].length, base: wordsOf(r[0].split(",")[0]).join(" "), bonus: (/\bNFS\b/.test(r[0]) ? 1.2 : 0) + (/\braw\b/i.test(r[0]) ? 0.4 : 0) }));
+    if (p) DB.prod = p.map((r, i) => ({ r, w: wordsOf(r[1]), bw: wordsOf(r[2]), len: r[1].length, bonus: -i / 40000 }));
+    if (!u || !p) DB.loading = null; // try again next time (e.g. was offline)
+    const q = $("#foodQ"); if (q) renderFoodList(q.value);
+  });
+  return DB.loading;
+}
+// Every query word must match the start of a word in the name (or the brand). Whole words, early words,
+// the base food and shorter names rank higher.
+function score(x, qws) {
+  const words = x.w, bw = x.bw;
+  let s = 0;
+  for (const q of qws) {
+    let best = -1;
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i], pos = Math.min(i, 3);
+      if (w === q) best = Math.max(best, 3 - pos * 0.4);
+      else if (w.startsWith(q)) best = Math.max(best, 1.6 - pos * 0.3);
+    }
+    if (bw) for (const w of bw) { if (w === q) best = Math.max(best, 2.6); else if (w.startsWith(q)) best = Math.max(best, 1.4); }
+    if (best < 0) return null;
+    s += best;
+  }
+  if (words[0] && words[0].startsWith(qws[0])) s += 2;
+  if (x.base && x.base === qws.join(" ")) s += 1.5;
+  return s - x.len / 50 + (x.bonus || 0);
+}
+function rank(list, qws, limit) {
+  const out = [];
+  for (const x of list) { const sc = score(x, qws); if (sc !== null) out.push([sc, x]); }
+  out.sort((a, b) => b[0] - a[0]);
+  return { total: out.length, items: out.slice(0, limit).map(o => o[1]) };
+}
+const servingLabel = p => /\d\s*(g|ml)\b/i.test(p.label) ? p.label : `${p.label} (${r1(p.g)} g)`;
+function fromUSDA(r) {
+  const [name, , kcal, protein, carbs, fat, fiber, sugar, sodium, satFat, ports] = r;
+  const per100 = { kcal, protein, carbs, fat, fiber, sugar, sodium, satFat };
+  const portions = String(ports || "").split(";").filter(Boolean).map(s => { const i = s.lastIndexOf("|"); return { label: s.slice(0, i), g: +s.slice(i + 1) }; }).filter(p => p.g > 0);
+  portions.push({ label: "100 g", g: 100 });
+  const p0 = portions[0];
+  return cleanItem({ ...scaleFrom(per100, p0.g), name, serving: servingLabel(p0) }, { per100, grams: p0.g, portions, portion: 0 });
+}
+function fromProd(r) {
+  const [code, name, brand, sl, sg, kcal, protein, carbs, fat, fiber, sugar, sodium, satFat] = r;
+  const per100 = { kcal, protein, carbs, fat, fiber, sugar, sodium, satFat };
+  const portions = sg > 0 ? [{ label: sl || `${r1(sg)} g`, g: sg }, { label: "100 g", g: 100 }] : [{ label: "100 g", g: 100 }];
+  const p0 = portions[0];
+  return cleanItem({ ...scaleFrom(per100, p0.g), name, brand, serving: servingLabel(p0) }, { per100, grams: p0.g, portions, portion: 0, barcode: code });
+}
+
 /* ---------- add sheet & search ---------- */
-let addMeal = defaultMeal(), searchCtl = null, searchT = null, POOL = {};
+let addMeal = defaultMeal(), searchCtl = null, searchT = null, POOL = {}, MORE = {};
 function openAdd(meal, focusSearch) {
   addMeal = meal || (S.date === todayKey() ? defaultMeal() : addMeal);
-  openSheet(`<div class="sheet-head"><div><div class="eyebrow">${esc(dayLabel(S.date))}</div><h2>Add food</h2></div><button class="icon-btn" data-close aria-label="Close">×</button></div>
-    <div class="chips" style="margin-bottom:14px" role="group" aria-label="Meal">${MEALS.map(m => `<button class="chip" data-act="add-meal" data-meal="${m}" aria-pressed="${m === addMeal}">${m}</button>`).join("")}</div>
-    <div class="actions">
-      <button class="action" data-act="scan-barcode">${I.barcode}<b>Scan barcode</b><span>Looks up millions of packaged foods</span></button>
-      <button class="action" data-act="scan-label">${I.label}<b>Scan label</b><span>Photo of the Nutrition Facts panel</span></button>
-      <button class="action" data-act="focus-search">${I.search}<b>Search</b><span>Common foods, your foods, products</span></button>
-      <button class="action" data-act="quick">${I.quick}<b>Quick add</b><span>Just the calories and macros</span></button>
+  MORE = {};
+  openSheet(`<div class="sheet-head"><div><div class="label">${esc(dayLabel(S.date))}</div><h2>Log food</h2></div>${X}</div>
+    <div class="seg" role="group" aria-label="Meal">${MEALS.map(m => `<button data-act="add-meal" data-meal="${m}" aria-pressed="${m === addMeal}">${m}</button>`).join("")}</div>
+    <div class="searchbox">${I.search}<input id="foodQ" type="search" enterkeyhint="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search foods and products" aria-label="Search foods"><button class="clear" data-act="clear-q" aria-label="Clear search" hidden>${I.x}</button></div>
+    <div class="tools" id="tools">
+      <button class="tool" data-act="scan-barcode">${I.barcode}<b>Scan<br>barcode</b></button>
+      <button class="tool" data-act="scan-label">${I.label}<b>Scan<br>label</b></button>
+      <button class="tool" data-act="quick">${I.quick}<b>Quick<br>add</b></button>
     </div>
-    <div class="section-lbl"><h3>Find a food</h3><button class="link-btn" data-act="manual">Enter manually</button></div>
-    <input class="search" id="foodQ" type="search" enterkeyhint="search" autocomplete="off" placeholder="e.g. banana, chicken breast, Kind bar" aria-label="Search foods">
-    <div id="foodList"></div>`,
+    <div id="foodList" class="results"></div>`,
     el => {
       const q = el.querySelector("#foodQ");
       q.addEventListener("input", () => renderFoodList(q.value));
-      q.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); q.blur(); runOnline(q.value, 0); } });
+      q.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); q.blur(); runOnline(q.value); } });
       renderFoodList("");
-      if (focusSearch) setTimeout(() => q.focus(), 250);
+      if (focusSearch) setTimeout(() => q.focus(), 300);
     });
+  loadDB();
 }
 function localPool() {
   const pool = [], seen = new Set();
   const foods = Object.entries(S.foods).map(([id, f]) => ({ ...f, foodId: id })).sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
-  for (const f of foods) { seen.add((f.name || "").toLowerCase()); pool.push({ item: cleanItem(f, { foodId: f.foodId, per100: f.per100, grams: f.grams, barcode: f.barcode }), tag: "Saved", src: "food" }); }
+  for (const f of foods) { seen.add((f.name || "").toLowerCase()); pool.push({ item: cleanItem(f, { foodId: f.foodId, per100: f.per100, grams: f.grams, barcode: f.barcode, portions: f.portions, portion: f.portions ? f.portions.findIndex(p => Math.abs(p.g - f.grams) < 0.5) : undefined }), tag: "Saved", src: "food" }); }
   const keys = Object.keys(S.days).sort().reverse().slice(0, 30);
   for (const k of keys) for (const e of entriesOf(k).slice().reverse()) {
     const n = (e.name || "").toLowerCase(); if (!n || seen.has(n)) continue; seen.add(n);
@@ -651,45 +745,77 @@ function localPool() {
   }
   return pool;
 }
-function matches(name, q) { const n = name.toLowerCase(); return q.split(/\s+/).every(w => n.includes(w)); }
 function rowHTML(group, i, it, tag) {
-  return `<button class="entry" data-act="pick" data-g="${group}" data-i="${i}"><div class="main"><div class="nm">${esc(it.name)}</div><div class="sub">${it.brand ? `<span>${esc(it.brand)}</span>` : ""}<span>${esc(it.serving || "1 serving")}</span>${tag ? `<span class="pill">${tag}</span>` : ""}</div></div><div class="k">${fmt(it.kcal)}</div></button>`;
+  return `<button class="row" data-act="pick" data-g="${group}" data-i="${i}" style="animation-delay:${Math.min(i, 8) * 18}ms"><div class="main"><div class="nm">${esc(it.name)}</div><div class="sub">${tag ? `<span class="tag ${tag === "Saved" ? "sig" : ""}">${tag}</span>` : ""}${it.brand ? `<span>${esc(it.brand)}</span>` : ""}<span>${esc(it.serving || "1 serving")}</span></div></div><div class="k">${fmt(it.kcal)}</div></button>`;
 }
-function renderFoodList(q) {
+function groupHTML(key, title, items, total, tagOf) {
+  if (!items.length) return "";
+  const shown = items.length;
+  return `<div class="grp"><span class="label">${title}</span><span class="cnt">${total > shown ? `${shown} of ${fmt(total)}` : fmt(total)}</span></div>
+    <div>${items.map((it, i) => rowHTML(key, i, it, tagOf ? tagOf(i) : "")).join("")}</div>
+    ${total > shown ? `<div class="more"><button class="btn small" data-act="more" data-g="${key}">Show more</button></div>` : ""}`;
+}
+const ONLINE_IDLE = `<div class="state"><button class="btn small" data-act="online">Search more products online</button></div>`;
+function renderFoodList(qRaw) {
   const box = $("#foodList"); if (!box) return;
-  q = q.trim().toLowerCase();
-  POOL.local = localPool().filter(p => !q || matches(p.item.name + " " + (p.item.brand || ""), q)).slice(0, q ? 20 : 10);
-  POOL.common = q ? (window.COMMON_FOODS || []).filter(r => matches(r[0], q)).slice(0, 12).map(fromCommon) : [];
-  let h = "";
-  if (POOL.local.length) h += `<div class="group-lbl">${q ? "Your foods" : "Recent and saved"}</div><div class="list">${POOL.local.map((p, i) => rowHTML("local", i, p.item, p.tag)).join("")}</div>`;
-  if (POOL.common.length) h += `<div class="group-lbl">Common foods</div><div class="list">${POOL.common.map((it, i) => rowHTML("common", i, it, "")).join("")}</div>`;
-  if (q.length >= 3) h += `<div id="onlineBox"><div class="group-lbl">Packaged products</div><p class="note" style="margin:0 2px">Searching Open Food Facts…</p></div>`;
-  else if (!q) h += POOL.local.length ? "" : `<p class="note" style="text-align:center;padding:14px 0">Foods you log show up here for one-tap re-use.</p>`;
-  box.innerHTML = h;
+  const raw = String(qRaw || "").trim(), qws = wordsOf(raw);
+  const tools = $("#tools"), clr = document.querySelector('[data-act="clear-q"]');
+  if (tools) tools.hidden = !!raw; if (clr) clr.hidden = !raw;
   clearTimeout(searchT);
-  if (q.length >= 3) searchT = setTimeout(() => runOnline(q, 0), 900);
+  if (searchCtl) { searchCtl.abort(); searchCtl = null; }
+  const pool = localPool();
+  if (!qws.length) {
+    POOL.local = pool.slice(0, 12).map(p => p.item); POOL.localSrc = pool.slice(0, 12).map(p => p.src);
+    box.innerHTML = POOL.local.length ? groupHTML("local", "Recent and saved", POOL.local, POOL.local.length, i => pool[i].tag)
+      : `<p class="empty-hint">Search over 5,000 everyday foods and thousands of packaged products, or scan a barcode. Foods you log show up here for one-tap re-use.</p>`;
+    return;
+  }
+  const lim = k => MORE[k] ? 40 : (k === "local" ? 4 : 6);
+  const loc = pool.map(p => ({ p, w: wordsOf(p.item.name + " " + (p.item.brand || "")), len: p.item.name.length }));
+  const L = rank(loc, qws, lim("local"));
+  POOL.local = L.items.map(x => x.p.item); POOL.localSrc = L.items.map(x => x.p.src);
+  let h = groupHTML("local", "Your foods", POOL.local, L.total, i => L.items[i].p.tag);
+  if (DB.usda) {
+    const U = rank(DB.usda, qws, lim("usda"));
+    POOL.usda = U.items.map(x => fromUSDA(x.r));
+    h += groupHTML("usda", "Everyday foods · USDA", POOL.usda, U.total);
+  }
+  let nProd = 0;
+  if (DB.prod) {
+    const P = rank(DB.prod, qws, lim("prod"));
+    POOL.prod = P.items.map(x => fromProd(x.r)); nProd = P.total;
+    h += groupHTML("prod", "Packaged products", POOL.prod, P.total);
+  }
+  if (!DB.usda || !DB.prod) h += `<div class="online"><div class="state"><span class="dotpulse"><i></i><i></i><i></i></span>Loading the food database…</div></div>`;
+  h += `<div class="grp"><span class="label">More products online</span><span class="cnt">Open Food Facts</span></div><div class="online" id="onlineBox">${ONLINE_IDLE}</div>`;
+  if (!L.total && DB.usda && !POOL.usda.length && !nProd) h = `<p class="empty-hint">Nothing matched “${esc(raw)}” in the built-in database. Try fewer or different words.</p>` + h;
+  h += `<p style="text-align:center;margin:18px 0 0"><button class="link" data-act="manual">Enter a food manually</button></p>`;
+  box.innerHTML = h;
+  // Look online automatically only when the built-in database comes up short.
+  if (raw.length >= 3 && DB.prod && nProd < 3) searchT = setTimeout(() => runOnline(raw), 1000);
 }
-async function runOnline(q, _) {
+async function runOnline(q) {
   q = (q || "").trim(); if (q.length < 2) return;
   if (searchCtl) searchCtl.abort();
   const ctl = searchCtl = new AbortController();
   const box = () => $("#onlineBox");
-  if (!box()) { const fl = $("#foodList"); if (fl) fl.insertAdjacentHTML("beforeend", `<div id="onlineBox"><div class="group-lbl">Packaged products</div><p class="note" style="margin:0 2px">Searching Open Food Facts…</p></div>`); }
-  if (!navigator.onLine) { if (box()) box().innerHTML = `<div class="group-lbl">Packaged products</div><p class="note" style="margin:0 2px">You're offline. Common foods and your saved foods still work.</p>`; return; }
+  if (!box()) return;
+  if (!navigator.onLine) { box().innerHTML = `<div class="state">You're offline. The built-in foods above still work.</div>`; return; }
+  box().innerHTML = `<div class="state"><span class="dotpulse"><i></i><i></i><i></i></span>Searching Open Food Facts…</div>`;
   try {
     const res = await offSearch(q, ctl.signal);
     if (ctl.signal.aborted || !box()) return;
     POOL.online = res.slice(0, 20);
-    box().innerHTML = `<div class="group-lbl">Packaged products</div>` + (POOL.online.length ? `<div class="list">${POOL.online.map((it, i) => rowHTML("online", i, it, "")).join("")}</div>` : `<p class="note" style="margin:0 2px">No products matched. Try the brand name, or scan the barcode.</p>`);
+    box().innerHTML = POOL.online.length ? POOL.online.map((it, i) => rowHTML("online", i, it, "")).join("") : `<div class="state">No more products matched online. Try the brand name, or scan the barcode.</div>`;
   } catch (e) {
     if (ctl.signal.aborted || !box()) return;
-    box().innerHTML = `<div class="group-lbl">Packaged products</div><p class="note" style="margin:0 2px">The product search didn't respond. Try again in a moment.</p>`;
+    box().innerHTML = `<div class="state" style="flex-wrap:wrap">Open Food Facts is busy right now.<button class="btn small" data-act="online">Try again</button></div>`;
   }
 }
 
 /* ---------- review / edit ---------- */
 let R = null;
-const SRC_LABEL = { label: "From the nutrition label", barcode: "From your saved foods", off: "From Open Food Facts", common: "Common food (USDA values)", manual: "Manual entry", quick: "Quick add", food: "From your foods", recent: "From your log", edit: "Logged entry" };
+const SRC_LABEL = { label: "From the nutrition label", barcode: "From your saved foods", off: "From Open Food Facts", prod: "From Open Food Facts", usda: "USDA FoodData Central", common: "Common food (USDA values)", manual: "Manual entry", quick: "Quick add", food: "From your foods", recent: "From your log", edit: "Logged entry" };
 function blankItem(extra) { return { name: "", serving: "", kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0, satFat: 0, qty: 1, ...extra }; }
 function cleanItem(o, extra = {}) {
   const it = blankItem();
@@ -704,38 +830,40 @@ function cleanItem(o, extra = {}) {
 function openReview(r) { R = { meal: addMeal, saveFoods: false, notes: "", ...r }; renderReview(); }
 function itemCard(it, i) {
   const fl = it.flags || [];
-  const f = (k, lbl, cls = "") => `<label class="${cls}">${lbl}<input class="${fl.includes(k) ? "flag" : ""}" data-i="${i}" data-k="${k}" inputmode="decimal" value="${it[k] ? r1(it[k]) : ""}" placeholder="0"></label>`;
-  return `<div class="item ${R.src === "label" ? "nf" : ""}">
-    ${R.src === "label" ? `<div class="nf-title">Nutrition Facts</div>` : ""}
-    <div class="item-top"><input class="name" data-i="${i}" data-k="name" value="${esc(it.name)}" placeholder="Name this food" aria-label="Food name">${R.items.length > 1 ? `<button class="icon-btn" data-act="rm-item" data-i="${i}" aria-label="Remove item">×</button>` : ""}</div>
+  const f = (k, lbl, color) => `<label><span class="label">${color ? `<i style="background:${color}"></i>` : ""}${lbl}</span><input class="${fl.includes(k) ? "flag" : ""}" data-i="${i}" data-k="${k}" inputmode="decimal" value="${it[k] ? (k === "kcal" ? r0(it[k]) : r1(it[k])) : ""}" placeholder="0"></label>`;
+  const ports = it.per100 && it.portions && it.portions.length > 1 ? `<div class="portions" role="group" aria-label="Portion">${it.portions.map((p, j) => `<button class="pchip" data-act="portion" data-i="${i}" data-p="${j}" aria-pressed="${j === it.portion}">${esc(p.label)}</button>`).join("")}</div>` : "";
+  return `<div class="nf">
+    <div class="nf-top"><input class="name" data-i="${i}" data-k="name" value="${esc(it.name)}" placeholder="Name this food" aria-label="Food name">${R.items.length > 1 ? `<button class="x" data-act="rm-item" data-i="${i}" aria-label="Remove item">${I.x}</button>` : ""}</div>
     ${it.brand ? `<div class="brand-l">${esc(it.brand)}</div>` : ""}
-    <div class="serv"><input data-i="${i}" data-k="serving" value="${esc(it.serving)}" placeholder="Serving size, e.g. 1 cup (240 g)" aria-label="Serving size"></div>
-    <div class="fields">${f("kcal", "Calories")}${f("protein", "Protein g", "p")}${f("carbs", "Carbs g", "c")}${f("fat", "Fat g", "f")}</div>
-    <details ${fl.some(k => ["fiber", "sugar", "satFat"].includes(k)) ? "open" : ""}><summary>More nutrients</summary><div class="fields">${f("fiber", "Fiber g")}${f("sugar", "Sugar g")}${f("satFat", "Sat fat g")}${f("sodium", "Sodium mg")}</div></details>
-    <div class="qty">${it.per100 ? `<span class="grams">Serving<input data-i="${i}" data-k="grams" inputmode="decimal" value="${r1(it.grams || 100)}" aria-label="Grams per serving">g</span>` : ""}<span>×</span><div class="stepper"><button data-act="qty" data-d="-0.5" data-i="${i}" aria-label="Fewer servings">−</button><input data-i="${i}" data-k="qty" inputmode="decimal" value="${r1(it.qty)}" aria-label="Servings"><button data-act="qty" data-d="0.5" data-i="${i}" aria-label="More servings">+</button></div><span class="ik" id="ik-${i}">${fmt(it.kcal * it.qty)} kcal</span></div>
+    <div class="serv"><span class="label">Serving</span><input data-i="${i}" data-k="serving" value="${esc(it.serving)}" placeholder="e.g. 1 cup (240 g)" aria-label="Serving size"></div>
+    <div class="bar9"></div>
+    ${ports}
+    <div class="amount">${it.per100 ? `<span class="grams"><input data-i="${i}" data-k="grams" inputmode="decimal" value="${r1(it.grams || 100)}" aria-label="Grams per serving">G ×</span>` : `<span class="label">Servings</span>`}<div class="stepper"><button data-act="qty" data-d="-0.5" data-i="${i}" aria-label="Fewer servings">−</button><input data-i="${i}" data-k="qty" inputmode="decimal" value="${r1(it.qty)}" aria-label="Servings"><button data-act="qty" data-d="0.5" data-i="${i}" aria-label="More servings">+</button></div><span class="ik" id="ik-${i}">${fmt(it.kcal * it.qty)}<small>KCAL</small></span></div>
+    <div class="facts-grid">${f("kcal", "Calories")}${f("protein", "Protein g", "var(--pro)")}${f("carbs", "Carbs g", "var(--carb)")}${f("fat", "Fat g", "var(--fat)")}</div>
+    <details class="more-n" ${fl.some(k => ["fiber", "sugar", "satFat"].includes(k)) ? "open" : ""}><summary>More nutrients</summary><div class="facts-grid" style="border-top-width:1px">${f("fiber", "Fiber g")}${f("sugar", "Sugar g")}${f("satFat", "Sat fat g")}${f("sodium", "Sodium mg")}</div></details>
   </div>`;
 }
-const reviewTotals = () => { const t = totals(R.items); return `<b>${fmt(t.kcal)} kcal</b>P ${fmt(t.protein)} · C ${fmt(t.carbs)} · F ${fmt(t.fat)}`; };
+const reviewTotals = () => { const t = totals(R.items); return `<b>${fmt(t.kcal)} kcal</b>P ${fmt(t.protein)}g · C ${fmt(t.carbs)}g · F ${fmt(t.fat)}g`; };
 function refreshItem(i) {
   const it = R.items[i];
-  for (const k of NUTR) { const el = document.querySelector(`input[data-i="${i}"][data-k="${k}"]`); if (el && el !== document.activeElement) el.value = it[k] ? r1(it[k]) : ""; }
+  for (const k of NUTR) { const el = document.querySelector(`input[data-i="${i}"][data-k="${k}"]`); if (el && el !== document.activeElement) el.value = it[k] ? (k === "kcal" ? r0(it[k]) : r1(it[k])) : ""; }
   const sv = document.querySelector(`input[data-i="${i}"][data-k="serving"]`); if (sv && sv !== document.activeElement) sv.value = it.serving;
-  const ik = $("#ik-" + i); if (ik) ik.textContent = fmt(it.kcal * (it.qty || 0)) + " kcal";
+  const gr = document.querySelector(`input[data-i="${i}"][data-k="grams"]`); if (gr && gr !== document.activeElement && it.grams) gr.value = r1(it.grams);
+  document.querySelectorAll(`.pchip[data-i="${i}"]`).forEach(c => c.setAttribute("aria-pressed", +c.dataset.p === it.portion));
+  const ik = $("#ik-" + i); if (ik) ik.innerHTML = `${fmt(it.kcal * (it.qty || 0))}<small>KCAL</small>`;
   const tot = $("#revTot"); if (tot) tot.innerHTML = reviewTotals();
 }
 function renderReview() {
   const editing = !!R.editId;
-  openSheet(`<div class="sheet-head"><div><div class="eyebrow">${esc(SRC_LABEL[R.src] || "")}</div><h2>${editing ? "Edit entry" : "Review and add"}</h2></div><button class="icon-btn" data-close aria-label="Close">×</button></div>
-    <div class="stack">
-      ${R.thumb ? `<img class="thumb" src="${R.thumb}" alt="Your label photo">` : ""}
-      ${R.warn ? `<p class="ai-note warn">${esc(R.warn)}</p>` : ""}
-      ${R.notes ? `<p class="ai-note">${esc(R.notes)}</p>` : ""}
-      ${R.items.map(itemCard).join("")}
-      ${R.rawText ? `<details><summary>Text the scanner read</summary><pre>${esc(R.rawText)}</pre></details>` : ""}
-      ${!editing ? `<button class="link-btn" style="text-align:left" data-act="add-item">+ Add another item</button>` : ""}
-      <div class="chips" role="group" aria-label="Meal">${MEALS.map(m => `<button class="chip" data-act="rev-meal" data-meal="${m}" aria-pressed="${m === R.meal}">${m}</button>`).join("")}</div>
-      ${!editing && R.src !== "food" && R.src !== "barcode" ? `<label class="check"><input type="checkbox" id="saveFoods" ${R.saveFoods ? "checked" : ""}> Save to my foods for one-tap re-use${R.barcode ? ` (linked to barcode ${esc(R.barcode)})` : ""}</label>` : ""}
-    </div>
+  openSheet(`<div class="sheet-head"><div><div class="label">${esc(SRC_LABEL[R.src] || "")}</div><h2>${editing ? "Edit entry" : "Add to log"}</h2></div>${X}</div>
+    ${R.thumb ? `<img class="thumb" src="${R.thumb}" alt="Your label photo">` : ""}
+    ${R.warn ? `<p class="notice warn">${esc(R.warn)}</p>` : ""}
+    ${R.notes ? `<p class="notice">${esc(R.notes)}</p>` : ""}
+    ${R.items.map(itemCard).join("")}
+    ${R.rawText ? `<details class="raw"><summary>Text the scanner read</summary><pre>${esc(R.rawText)}</pre></details>` : ""}
+    ${!editing ? `<button class="link add-another" data-act="add-item">Add another item</button>` : ""}
+    <div class="meal-pick"><span class="label">Meal</span><div class="seg" role="group" aria-label="Meal">${MEALS.map(m => `<button data-act="rev-meal" data-meal="${m}" aria-pressed="${m === R.meal}">${m}</button>`).join("")}</div></div>
+    ${!editing && R.src !== "food" && R.src !== "barcode" ? `<label class="check"><input type="checkbox" id="saveFoods" ${R.saveFoods ? "checked" : ""}> Save to my foods for one-tap re-use${R.barcode ? ` (linked to barcode ${esc(R.barcode)})` : ""}</label>` : ""}
     <div class="sheet-foot">${editing ? `<button class="btn danger" data-act="delete-entry">Delete</button>` : ""}<div class="tot" id="revTot">${reviewTotals()}</div><button class="btn primary" data-act="commit">${editing ? "Save" : "Add to " + R.meal}</button></div>`,
     el => {
       el.addEventListener("input", e => {
@@ -745,7 +873,8 @@ function renderReview() {
         if (k === "name" || k === "serving") { it[k] = t.value; return; }
         if (k === "grams") {
           const g = num(t.value); if (!(g > 0) || !it.per100) return;
-          it.grams = g; Object.assign(it, scaleFrom(it.per100, g)); it.serving = `${r1(g)} g`; refreshItem(+i); return;
+          it.grams = g; Object.assign(it, scaleFrom(it.per100, g)); it.serving = `${r1(g)} g`;
+          it.portion = it.portions ? it.portions.findIndex(p => Math.abs(p.g - g) < 0.5) : -1; refreshItem(+i); return;
         }
         it[k] = num(t.value);
         if (it.flags) { it.flags = it.flags.filter(f => f !== k); t.classList.remove("flag"); }
@@ -778,24 +907,25 @@ function commitReview() {
       foodId = foodId || (R.barcode && single ? R.barcode : uid());
       const prev = S.foods[foodId] || {};
       const food = { ...strip(it), qty: 1, barcode: (R.barcode && single) ? R.barcode : (prev.barcode || it.barcode || null), uses: (prev.uses || 0) + 1, lastUsed: now };
-      if (it.per100) { food.per100 = it.per100; food.grams = it.grams; }
+      if (it.per100) { food.per100 = it.per100; food.grams = it.grams; if (Array.isArray(it.portions)) food.portions = it.portions.slice(0, 8); }
       saveFood(foodId, food);
     }
     list.push({ ...strip(it), id: uid(), meal: R.meal, src: R.src, foodId, t: now });
   }
   saveDay(date, list);
   const k = totals(items).kcal, meal = R.meal;
+  if (navigator.vibrate) navigator.vibrate(12);
   closeSheet(); if (S.view !== "day") go("day"); else render();
   toast(`Added ${fmt(k)} kcal to ${meal}`);
 }
 
 /* ---------- scanner sheet ---------- */
 function openScanner() {
-  openSheet(`<div class="sheet-head"><div><div class="eyebrow">${esc(addMeal)}</div><h2>Scan a barcode</h2></div><button class="icon-btn" data-close aria-label="Close">×</button></div>
+  openSheet(`<div class="sheet-head"><div><div class="label">${esc(addMeal)}</div><h2>Scan a barcode</h2></div>${X}</div>
     <div class="scanner"><video id="scanVid" playsinline muted autoplay></video><div class="reticle"></div></div>
     <p class="muted" id="scanMsg" style="text-align:center;margin:10px 0 14px">Line the barcode up inside the box.</p>
     <div class="row2"><input id="codeQ" inputmode="numeric" pattern="[0-9]*" placeholder="Or type the barcode number" aria-label="Barcode number"><button class="btn" data-act="code-go">Look up</button></div>
-    <p style="text-align:center;margin:10px 0 0"><button class="link-btn" data-act="barcode-photo">Take a photo instead</button></p>`,
+    <p style="text-align:center;margin:10px 0 0"><button class="link" data-act="barcode-photo">Take a photo instead</button></p>`,
     el => { sheetCleanup = stopScan; startScan(el.querySelector("#scanVid"), el.querySelector("#scanMsg")); });
 }
 function flowBarcodePhoto() {
@@ -822,16 +952,24 @@ document.addEventListener("click", e => {
     case "barcode-photo": flowBarcodePhoto(); break;
     case "scan-label": flowLabel(null); break;
     case "label-for": flowLabel(S.pendingBarcode); break;
-    case "focus-search": { const q = $("#foodQ"); if (q) { q.focus(); q.scrollIntoView({ block: "start", behavior: "smooth" }); } break; }
     case "quick": openReview({ src: "quick", items: [blankItem({ name: "Quick add" })] }); setTimeout(() => { const k = document.querySelector('input[data-k="kcal"]'); if (k) k.focus(); }, 250); break;
     case "manual": openReview({ src: "manual", items: [blankItem()], saveFoods: true }); break;
     case "manual-for": openReview({ src: "manual", items: [blankItem()], saveFoods: true, barcode: S.pendingBarcode }); break;
     case "pick": {
       const g = b.dataset.g, i = +b.dataset.i;
-      if (g === "local") { const p = POOL.local[i]; if (!p) return; openReview({ src: p.src, items: [{ ...p.item, qty: p.src === "food" ? 1 : p.item.qty }] }); }
-      else if (g === "common") { const it = POOL.common[i]; if (it) openReview({ src: "common", items: [{ ...it }], saveFoods: false }); }
+      if (g === "local") { const it = POOL.local[i], src = POOL.localSrc[i]; if (!it) return; openReview({ src, items: [{ ...it, qty: src === "food" ? 1 : it.qty }] }); }
+      else if (g === "usda") { const it = POOL.usda && POOL.usda[i]; if (it) openReview({ src: "usda", items: [{ ...it }], saveFoods: false }); }
+      else if (g === "prod") { const it = POOL.prod && POOL.prod[i]; if (it) openReview({ src: "prod", items: [{ ...it }], barcode: it.barcode ? normCode(it.barcode) : null, saveFoods: true }); }
       else if (g === "online") { const it = POOL.online && POOL.online[i]; if (it) openReview({ src: "off", items: [{ ...it }], barcode: it.barcode ? normCode(it.barcode) : null, saveFoods: true }); }
       break;
+    }
+    case "more": { MORE[b.dataset.g] = true; const q = $("#foodQ"); renderFoodList(q ? q.value : ""); break; }
+    case "online": { const q = $("#foodQ"); if (q) runOnline(q.value); break; }
+    case "clear-q": { const q = $("#foodQ"); if (q) { q.value = ""; MORE = {}; renderFoodList(""); q.focus(); } break; }
+    case "portion": {
+      const i = +b.dataset.i, it = R.items[i], p = it && it.portions && it.portions[+b.dataset.p]; if (!p) return;
+      if (!it.per100) { toast("You edited the numbers, so portions are off for this item."); return; }
+      it.grams = p.g; it.portion = +b.dataset.p; Object.assign(it, scaleFrom(it.per100, p.g)); it.serving = servingLabel(p); refreshItem(i); break;
     }
     case "qty": { const i = +b.dataset.i, it = R.items[i], d = num(b.dataset.d); let q = (num(it.qty) || 1) + d; if (it.qty <= 0.5 && d < 0) q = 0.25; if (it.qty === 0.25 && d > 0) q = 0.5; it.qty = Math.max(0.25, r1(q)); const inp = document.querySelector(`input[data-i="${i}"][data-k="qty"]`); if (inp) inp.value = it.qty; refreshItem(i); break; }
     case "rm-item": R.items.splice(+b.dataset.i, 1); renderReview(); break;
@@ -864,6 +1002,7 @@ document.addEventListener("click", e => {
   }
 });
 document.addEventListener("input", e => {
+  if (S.view === "goals" && G && /^g-/.test(e.target.id || "")) { readProfile(); refreshSplit(); return; }
   if (S.view !== "goals" || !G || !e.target.id || !/^p-/.test(e.target.id)) return;
   readProfile(); const o = $("#calc-out"); if (o) o.innerHTML = calcOut(calc(G.profile));
 });
@@ -871,6 +1010,13 @@ document.addEventListener("change", e => { if (S.view === "goals" && G && /^p-(a
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#sheet").hidden) closeSheet(); });
 let lastToday = todayKey();
 document.addEventListener("visibilitychange", () => { if (document.hidden) return; const t = todayKey(); if (t !== lastToday) { if (S.date === lastToday) S.date = t; lastToday = t; render(); } });
+
+let touch0 = null;
+document.addEventListener("touchstart", e => { touch0 = (S.view === "day" && $("#sheet").hidden && e.touches.length === 1) ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() } : null; }, { passive: true });
+document.addEventListener("touchend", e => {
+  if (!touch0) return; const t = e.changedTouches[0], dx = t.clientX - touch0.x, dy = t.clientY - touch0.y, fast = Date.now() - touch0.t < 600; touch0 = null;
+  if (fast && Math.abs(dx) > 70 && Math.abs(dy) < 45) { S.date = addDays(S.date, dx > 0 ? -1 : 1); shownKcal = null; render(); }
+}, { passive: true });
 
 /* ---------- boot ---------- */
 load();
